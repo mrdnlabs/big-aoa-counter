@@ -1,0 +1,64 @@
+{
+  "schemaVersion": "1.7.4",
+  "acapPackageConf": {
+    "setup": {
+      "friendlyName": "Big AOA Counter",
+      "appName": "big_aoa_counter",
+      "vendor": "MRDN Labs",
+      "embeddedSdkVersion": "3.0",
+      "runMode": "respawn",
+      "version": "0.1.0"
+    },
+    "configuration": {
+      "settingPage": "index.html",
+      "reverseProxy": [
+        {
+          "apiPath": "big-aoa-counter",
+          "target": "http://localhost:2001",
+          "access": "viewer"
+        }
+      ],
+      "paramConfig": [
+        {
+          "name": "Label",
+          "default": "Object count",
+          "type": "string"
+        },
+        {
+          "name": "Mode",
+          "default": "both",
+          "type": "enum:custom,dynamic,both"
+        },
+        {
+          "name": "DynamicTextSlot",
+          "default": "12",
+          "type": "string"
+        },
+        {
+          "name": "ScenarioUid",
+          "default": "",
+          "type": "hidden:string"
+        },
+        {
+          "name": "Category",
+          "default": "total",
+          "type": "hidden:string"
+        },
+        {
+          "name": "PollIntervalMs",
+          "default": "1000",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "resources": {
+    "dbus": {
+      "requiredMethods": [
+        "com.axis.Graphics2.*",
+        "com.axis.Overlay2.*",
+        "com.axis.HTTPConf1.VAPIXServiceAccounts1.GetCredentials"
+      ]
+    }
+  }
+}

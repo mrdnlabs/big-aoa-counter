@@ -1,0 +1,5 @@
+.env.devices
+build/
+*.log
+*.tmp
+*.swp

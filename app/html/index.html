@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Big AOA Counter</title>
+    <script>
+      if (window.location.port !== '2001') {
+        window.location.replace(`http://${window.location.hostname}:2001/`);
+      }
+    </script>
+    <link rel="stylesheet" href="/style.css">
+  </head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <div class="hero-top">
+        <div>
+          <p class="eyebrow">AXIS Object Analytics</p>
+          <h1 id="label">Object count</h1>
+        </div>
+        <span class="badge">Live</span>
+      </div>
+      <div class="count-card">
+        <div class="count" id="count">0</div>
+        <p class="meta" id="meta">Waiting for AOA data</p>
+      </div>
+    </section>
+
+    <section class="panel compact">
+      <h2>Widget</h2>
+      <div class="widget-share">
+        <label class="field">Widget URL
+          <span class="tooltip" title="Standalone live counter page for embedding in a VMS or dashboard.">i</span>
+          <input id="widget-url" readonly>
+          <span class="hint">Use this page as a lightweight live dashboard widget.</span>
+        </label>
+        <button type="button" id="copy-widget-url">Copy URL</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Configuration</h2>
+      <form id="config-form">
+        <div class="field-grid">
+          <label class="field">Label
+            <span class="tooltip" title="Text used in the overlay and dynamic text output.">i</span>
+            <input name="Label" required>
+            <span class="hint">Displayed next to the live count.</span>
+          </label>
+          <label class="field">Mode
+            <span class="tooltip" title="custom = large ACAP overlay, dynamic = Axis text slot, both = both outputs at once.">i</span>
+            <select name="Mode">
+              <option value="both">both</option>
+              <option value="custom">custom</option>
+              <option value="dynamic">dynamic</option>
+            </select>
+            <span class="hint">Choose where the count is rendered.</span>
+          </label>
+          <label class="field">Dynamic text slot
+            <span class="tooltip" title="Axis dynamic text slot number. Slot 12 maps to #D12.">i</span>
+            <input name="DynamicTextSlot" type="number" min="1" max="16">
+            <span class="hint">Used when mode is `dynamic` or `both`.</span>
+          </label>
+          <label class="field">Scenario
+            <span class="tooltip" title="Pick a specific countable AOA scenario, or leave it on automatic selection.">i</span>
+            <select name="ScenarioUid" id="scenario-select">
+              <option value="">Auto-select first countable scenario</option>
+            </select>
+            <span class="hint">Only crossline counting and occupancy scenarios are listed.</span>
+          </label>
+          <label class="field">AOA field
+            <span class="tooltip" title="Which count value to display from the AOA response.">i</span>
+            <select name="Category" id="category-select"></select>
+            <span class="hint" id="category-description">Overall count for the selected scenario.</span>
+          </label>
+          <label class="field">Poll interval (ms)
+            <span class="tooltip" title="Milliseconds between AOA polls. 1000 = 1 second.">i</span>
+            <input name="PollIntervalMs" type="number" min="250" step="250">
+            <span class="hint">1000 means one update per second.</span>
+          </label>
+        </div>
+        <div class="form-actions">
+          <button type="submit">Save config</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="panel compact">
+      <h2>Actions</h2>
+      <div class="actions">
+        <button data-action="refresh">Refresh</button>
+        <button data-action="discover">Auto-select scenario</button>
+        <button data-action="reset">Reset accumulated count</button>
+        <button data-action="alarm">Send test alarm</button>
+      </div>
+      <pre id="status-log"></pre>
+    </section>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

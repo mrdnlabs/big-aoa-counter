@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Big AOA Counter Widget</title>
+    <script>
+      if (window.location.port !== '2001') {
+        window.location.replace(`http://${window.location.hostname}:2001/widget.html`);
+      }
+    </script>
+    <link rel="stylesheet" href="/style.css">
+  </head>
+<body class="widget-body">
+  <main class="widget-shell">
+    <section class="widget-card">
+      <p class="eyebrow" id="widget-eyebrow">AXIS Object Analytics</p>
+      <h1 class="widget-label" id="widget-label">Object count</h1>
+      <div class="widget-count" id="widget-count">0</div>
+      <p class="widget-meta" id="widget-meta">Connecting to live count...</p>
+    </section>
+  </main>
+  <script src="/widget.js"></script>
+</body>
+</html>
