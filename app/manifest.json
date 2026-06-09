@@ -7,7 +7,7 @@
       "vendor": "MRDN Labs",
       "embeddedSdkVersion": "3.0",
       "runMode": "respawn",
-      "version": "0.1.3"
+      "version": "0.1.4"
     },
     "configuration": {
       "settingPage": "index.html",
@@ -52,6 +52,26 @@
         {
           "name": "OverlayScalePercent",
           "default": "100",
+          "type": "string"
+        },
+        {
+          "name": "OverlayWidthPercent",
+          "default": "100",
+          "type": "string"
+        },
+        {
+          "name": "OverlayX",
+          "default": "0",
+          "type": "string"
+        },
+        {
+          "name": "OverlayY",
+          "default": "-0.72",
+          "type": "string"
+        },
+        {
+          "name": "ShowScenarioName",
+          "default": "true",
           "type": "string"
         }
       ]

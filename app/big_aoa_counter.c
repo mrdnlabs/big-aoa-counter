@@ -28,6 +28,9 @@
 #define DEFAULT_OVERLAY_SCALE_PERCENT 100
 #define MIN_OVERLAY_SCALE_PERCENT 50
 #define MAX_OVERLAY_SCALE_PERCENT 200
+#define DEFAULT_OVERLAY_WIDTH_PERCENT 100
+#define DEFAULT_OVERLAY_X 0.0
+#define DEFAULT_OVERLAY_Y -0.72
 
 typedef struct {
     gchar* label;
@@ -37,6 +40,10 @@ typedef struct {
     gchar* category;
     gchar* poll_interval_ms;
     gchar* overlay_scale_percent;
+    gchar* overlay_width_percent;
+    gchar* overlay_x;
+    gchar* overlay_y;
+    gchar* show_scenario_name;
 } AppConfig;
 
 typedef struct {
@@ -53,6 +60,10 @@ typedef struct {
     gchar* api_version;
     gchar* last_error;
     gint overlay_scale_percent;
+    gint overlay_width_percent;
+    gfloat overlay_x;
+    gfloat overlay_y;
+    gboolean show_scenario_name;
 } AppState;
 
 static volatile sig_atomic_t application_running = 1;
@@ -88,6 +99,10 @@ static void app_config_clear(AppConfig* config) {
     g_free(config->category);
     g_free(config->poll_interval_ms);
     g_free(config->overlay_scale_percent);
+    g_free(config->overlay_width_percent);
+    g_free(config->overlay_x);
+    g_free(config->overlay_y);
+    g_free(config->show_scenario_name);
 }
 
 static gboolean read_parameter(const char* name, gchar** value) {
@@ -119,6 +134,10 @@ static AppConfig load_config(void) {
         panic("Failed to load application parameters");
     }
     read_parameter_or_default("OverlayScalePercent", "100", &config.overlay_scale_percent);
+    read_parameter_or_default("OverlayWidthPercent", "100", &config.overlay_width_percent);
+    read_parameter_or_default("OverlayX", "0", &config.overlay_x);
+    read_parameter_or_default("OverlayY", "-0.72", &config.overlay_y);
+    read_parameter_or_default("ShowScenarioName", "true", &config.show_scenario_name);
     return config;
 }
 
@@ -151,12 +170,58 @@ static gint parse_overlay_scale_percent(const char* value) {
     return CLAMP((gint)parsed, MIN_OVERLAY_SCALE_PERCENT, MAX_OVERLAY_SCALE_PERCENT);
 }
 
+static gint parse_overlay_width_percent(const char* value) {
+    if (value == NULL || *value == '\0') {
+        return DEFAULT_OVERLAY_WIDTH_PERCENT;
+    }
+
+    char* end = NULL;
+    gint64 parsed = g_ascii_strtoll(value, &end, 10);
+    if (end == NULL || *end != '\0') {
+        return DEFAULT_OVERLAY_WIDTH_PERCENT;
+    }
+    if (parsed == 100 || parsed == 50 || parsed == 33) {
+        return (gint)parsed;
+    }
+    return DEFAULT_OVERLAY_WIDTH_PERCENT;
+}
+
+static gfloat parse_overlay_position(const char* value, gfloat default_value) {
+    if (value == NULL || *value == '\0') {
+        return default_value;
+    }
+
+    char* end = NULL;
+    gdouble parsed = g_ascii_strtod(value, &end);
+    if (end == NULL || *end != '\0') {
+        return default_value;
+    }
+    return (gfloat)CLAMP(parsed, -1.0, 1.0);
+}
+
+static gboolean parse_bool_string(const char* value, gboolean default_value) {
+    if (value == NULL || *value == '\0') {
+        return default_value;
+    }
+    if (g_strcmp0(value, "true") == 0) {
+        return TRUE;
+    }
+    if (g_strcmp0(value, "false") == 0) {
+        return FALSE;
+    }
+    return default_value;
+}
+
 static void update_state_from_config(const AppConfig* config) {
     pthread_mutex_lock(&app_state.mutex);
     state_replace(&app_state.label, config->label);
     state_replace(&app_state.category, config->category);
     state_replace(&app_state.mode, config->mode);
     app_state.overlay_scale_percent = parse_overlay_scale_percent(config->overlay_scale_percent);
+    app_state.overlay_width_percent = parse_overlay_width_percent(config->overlay_width_percent);
+    app_state.overlay_x = parse_overlay_position(config->overlay_x, DEFAULT_OVERLAY_X);
+    app_state.overlay_y = parse_overlay_position(config->overlay_y, DEFAULT_OVERLAY_Y);
+    app_state.show_scenario_name = parse_bool_string(config->show_scenario_name, TRUE);
     pthread_mutex_unlock(&app_state.mutex);
 }
 
@@ -164,9 +229,14 @@ static void setup_overlay_data(struct axoverlay_overlay_data* data) {
     axoverlay_init_overlay_data(data);
     data->postype = AXOVERLAY_CUSTOM_NORMALIZED;
     data->anchor_point = AXOVERLAY_ANCHOR_CENTER;
-    data->x = 0.0;
-    data->y = -0.72;
+    data->x = DEFAULT_OVERLAY_X;
+    data->y = DEFAULT_OVERLAY_Y;
     data->scale_to_stream = FALSE;
+}
+
+static gfloat clamp_center_coordinate(gfloat value, gfloat half_extent) {
+    gfloat max_offset = MAX(0.0, 1.0 - half_extent);
+    return CLAMP(value, -max_offset, max_offset);
 }
 
 static void adjustment_cb(gint id,
@@ -178,20 +248,51 @@ static void adjustment_cb(gint id,
                           gint* overlay_height,
                           gpointer user_data) {
     (void)id;
-    (void)postype;
-    (void)overlay_x;
-    (void)overlay_y;
     (void)user_data;
     gint scale = DEFAULT_OVERLAY_SCALE_PERCENT;
+    gint width_percent = DEFAULT_OVERLAY_WIDTH_PERCENT;
+    gfloat x = DEFAULT_OVERLAY_X;
+    gfloat y = DEFAULT_OVERLAY_Y;
     pthread_mutex_lock(&app_state.mutex);
     if (app_state.overlay_scale_percent > 0) {
         scale = app_state.overlay_scale_percent;
     }
+    if (app_state.overlay_width_percent > 0) {
+        width_percent = app_state.overlay_width_percent;
+    }
+    x = app_state.overlay_x;
+    y = app_state.overlay_y;
     pthread_mutex_unlock(&app_state.mutex);
 
-    *overlay_width = stream->rotation == 90 || stream->rotation == 270 ? stream->height : stream->width;
-    gint base_height = MAX(140, *overlay_width / 7);
+    gint stream_width = stream->rotation == 90 || stream->rotation == 270 ? stream->height : stream->width;
+    gint stream_height = stream->rotation == 90 || stream->rotation == 270 ? stream->width : stream->height;
+    *overlay_width = MAX(160, (stream_width * width_percent) / 100);
+    *overlay_width = MIN(*overlay_width, stream_width);
+    gint base_height = MAX(140, stream_width / 7);
     *overlay_height = MAX(80, (base_height * scale) / 100);
+    *overlay_height = MIN(*overlay_height, stream_height);
+    *postype = AXOVERLAY_CUSTOM_NORMALIZED;
+    *overlay_x = clamp_center_coordinate(x, (gfloat)*overlay_width / (gfloat)stream_width);
+    *overlay_y = clamp_center_coordinate(y, (gfloat)*overlay_height / (gfloat)stream_height);
+}
+
+static void show_fitted_text(cairo_t* cr,
+                             const char* text,
+                             gdouble x,
+                             gdouble y,
+                             gdouble max_width,
+                             gdouble requested_size,
+                             gdouble min_size) {
+    cairo_text_extents_t extents;
+    gdouble size = requested_size;
+    cairo_set_font_size(cr, size);
+    cairo_text_extents(cr, text, &extents);
+    if (extents.width > max_width && extents.width > 0.0) {
+        size = MAX(min_size, requested_size * (max_width / extents.width));
+        cairo_set_font_size(cr, size);
+    }
+    cairo_move_to(cr, x, y);
+    cairo_show_text(cr, text);
 }
 
 static void draw_overlay(gpointer rendering_context,
@@ -214,6 +315,7 @@ static void draw_overlay(gpointer rendering_context,
     gchar* mode = NULL;
     gchar* scenario = NULL;
     gint count = 0;
+    gboolean show_scenario_name = TRUE;
 
     pthread_mutex_lock(&app_state.mutex);
     label = g_strdup(app_state.label && *app_state.label ? app_state.label : "Object count");
@@ -221,6 +323,7 @@ static void draw_overlay(gpointer rendering_context,
     scenario = g_strdup(app_state.scenario_name && *app_state.scenario_name ? app_state.scenario_name
                                                                             : "Awaiting AOA scenario");
     count = app_state.count;
+    show_scenario_name = app_state.show_scenario_name;
     pthread_mutex_unlock(&app_state.mutex);
 
     cairo_t* cr = rendering_context;
@@ -235,12 +338,15 @@ static void draw_overlay(gpointer rendering_context,
         return;
     }
 
+    gdouble radius = MIN(28.0, (gdouble)MIN(overlay_width, overlay_height) / 2.0 - 1.0);
+    radius = MAX(0.0, radius);
+
     cairo_set_source_rgba(cr, 0.06, 0.06, 0.06, 0.72);
     cairo_new_path(cr);
-    cairo_arc(cr, 28, 28, 28, G_PI, 3 * G_PI / 2);
-    cairo_arc(cr, overlay_width - 28, 28, 28, 3 * G_PI / 2, 0);
-    cairo_arc(cr, overlay_width - 28, overlay_height - 28, 28, 0, G_PI / 2);
-    cairo_arc(cr, 28, overlay_height - 28, 28, G_PI / 2, G_PI);
+    cairo_arc(cr, radius, radius, radius, G_PI, 3 * G_PI / 2);
+    cairo_arc(cr, overlay_width - radius, radius, radius, 3 * G_PI / 2, 0);
+    cairo_arc(cr, overlay_width - radius, overlay_height - radius, radius, 0, G_PI / 2);
+    cairo_arc(cr, radius, overlay_height - radius, radius, G_PI / 2, G_PI);
     cairo_close_path(cr);
     cairo_fill(cr);
 
@@ -250,19 +356,34 @@ static void draw_overlay(gpointer rendering_context,
 
     cairo_select_font_face(cr, "sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
     cairo_set_source_rgb(cr, 0.97, 0.96, 0.93);
-    cairo_set_font_size(cr, overlay_height * 0.48);
     gchar* count_text = g_strdup_printf("%d", count);
-    cairo_move_to(cr, 52, overlay_height * 0.66);
-    cairo_show_text(cr, count_text);
+    gdouble label_x = overlay_width < 700 ? overlay_width * 0.42 : overlay_width * 0.36;
+    show_fitted_text(cr,
+                     count_text,
+                     52,
+                     overlay_height * 0.66,
+                     MAX(32.0, label_x - 72.0),
+                     overlay_height * 0.48,
+                     overlay_height * 0.24);
 
-    cairo_set_font_size(cr, overlay_height * 0.18);
-    cairo_move_to(cr, overlay_width * 0.36, overlay_height * 0.42);
-    cairo_show_text(cr, label);
+    show_fitted_text(cr,
+                     label,
+                     label_x,
+                     show_scenario_name ? overlay_height * 0.42 : overlay_height * 0.56,
+                     MAX(20.0, overlay_width - label_x - 28),
+                     overlay_height * 0.18,
+                     overlay_height * 0.10);
 
-    cairo_set_font_size(cr, overlay_height * 0.12);
-    cairo_set_source_rgba(cr, 0.85, 0.85, 0.82, 0.95);
-    cairo_move_to(cr, overlay_width * 0.36, overlay_height * 0.68);
-    cairo_show_text(cr, scenario);
+    if (show_scenario_name) {
+        cairo_set_source_rgba(cr, 0.85, 0.85, 0.82, 0.95);
+        show_fitted_text(cr,
+                         scenario,
+                         label_x,
+                         overlay_height * 0.68,
+                         MAX(20.0, overlay_width - label_x - 28),
+                         overlay_height * 0.12,
+                         overlay_height * 0.08);
+    }
 
     g_free(count_text);
     g_free(label);
@@ -664,6 +785,10 @@ static gboolean update_count_from_aoa(CURL* handle,
     state_replace(&app_state.api_version, api_version);
     state_replace(&app_state.last_error, "");
     app_state.overlay_scale_percent = parse_overlay_scale_percent(config->overlay_scale_percent);
+    app_state.overlay_width_percent = parse_overlay_width_percent(config->overlay_width_percent);
+    app_state.overlay_x = parse_overlay_position(config->overlay_x, DEFAULT_OVERLAY_X);
+    app_state.overlay_y = parse_overlay_position(config->overlay_y, DEFAULT_OVERLAY_Y);
+    app_state.show_scenario_name = parse_bool_string(config->show_scenario_name, TRUE);
     pthread_mutex_unlock(&app_state.mutex);
 
     redraw_overlay();
@@ -730,6 +855,10 @@ static json_t* build_status_json(void) {
                                     "PollIntervalMs",
                                     config.poll_interval_ms);
     json_object_set_new(config_json, "OverlayScalePercent", json_string(config.overlay_scale_percent));
+    json_object_set_new(config_json, "OverlayWidthPercent", json_string(config.overlay_width_percent));
+    json_object_set_new(config_json, "OverlayX", json_string(config.overlay_x));
+    json_object_set_new(config_json, "OverlayY", json_string(config.overlay_y));
+    json_object_set_new(config_json, "ShowScenarioName", json_string(config.show_scenario_name));
 
     pthread_mutex_lock(&app_state.mutex);
     json_t* state_json = json_pack("{s:i,s:s,s:s,s:s,s:s,s:s,s:s,s:s}",
@@ -837,6 +966,16 @@ static gboolean parse_integer_range(const char* value, gint min_value, gint max_
     return end != NULL && *end == '\0' && parsed >= min_value && parsed <= max_value;
 }
 
+static gboolean parse_float_range(const char* value, gdouble min_value, gdouble max_value) {
+    if (value == NULL || *value == '\0') {
+        return FALSE;
+    }
+
+    char* end = NULL;
+    gdouble parsed = g_ascii_strtod(value, &end);
+    return end != NULL && *end == '\0' && parsed >= min_value && parsed <= max_value;
+}
+
 static gboolean is_digits_or_empty(const char* value) {
     if (value == NULL) {
         return FALSE;
@@ -865,6 +1004,8 @@ static gboolean label_is_valid(const char* value) {
 
 static gboolean validate_config_value(const char* key, const char* value, gchar** error_message) {
     static const char* const modes[] = {"custom", "dynamic", "both"};
+    static const char* const overlay_widths[] = {"100", "50", "33"};
+    static const char* const bool_values[] = {"true", "false"};
     static const char* const categories[] = {"total",
                                              "totalVehicle",
                                              "totalHuman",
@@ -934,6 +1075,30 @@ static gboolean validate_config_value(const char* key, const char* value, gchar*
         return FALSE;
     }
 
+    if (g_strcmp0(key, "OverlayWidthPercent") == 0) {
+        if (string_in_list(value, overlay_widths, G_N_ELEMENTS(overlay_widths))) {
+            return TRUE;
+        }
+        *error_message = g_strdup("OverlayWidthPercent must be 100, 50, or 33");
+        return FALSE;
+    }
+
+    if (g_strcmp0(key, "OverlayX") == 0 || g_strcmp0(key, "OverlayY") == 0) {
+        if (parse_float_range(value, -1.0, 1.0)) {
+            return TRUE;
+        }
+        *error_message = g_strdup_printf("%s must be a number from -1.0 to 1.0", key);
+        return FALSE;
+    }
+
+    if (g_strcmp0(key, "ShowScenarioName") == 0) {
+        if (string_in_list(value, bool_values, G_N_ELEMENTS(bool_values))) {
+            return TRUE;
+        }
+        *error_message = g_strdup("ShowScenarioName must be true or false");
+        return FALSE;
+    }
+
     *error_message = g_strdup_printf("Unknown configuration key: %s", key);
     return FALSE;
 }
@@ -973,8 +1138,17 @@ static int handle_config(struct mg_connection* conn) {
         return send_error_response(conn, 400, "Expected a JSON object");
     }
 
-    const char* keys[] = {"Label", "Mode", "DynamicTextSlot", "ScenarioUid", "Category",
-                          "PollIntervalMs", "OverlayScalePercent"};
+    const char* keys[] = {"Label",
+                          "Mode",
+                          "DynamicTextSlot",
+                          "ScenarioUid",
+                          "Category",
+                          "PollIntervalMs",
+                          "OverlayScalePercent",
+                          "OverlayWidthPercent",
+                          "OverlayX",
+                          "OverlayY",
+                          "ShowScenarioName"};
     const char* payload_key = NULL;
     json_t* payload_value = NULL;
     json_object_foreach(payload, payload_key, payload_value) {
@@ -1119,6 +1293,10 @@ int main(void) {
     memset(&app_state, 0, sizeof(app_state));
     pthread_mutex_init(&app_state.mutex, NULL);
     app_state.overlay_scale_percent = DEFAULT_OVERLAY_SCALE_PERCENT;
+    app_state.overlay_width_percent = DEFAULT_OVERLAY_WIDTH_PERCENT;
+    app_state.overlay_x = DEFAULT_OVERLAY_X;
+    app_state.overlay_y = DEFAULT_OVERLAY_Y;
+    app_state.show_scenario_name = TRUE;
     openlog(APP_NAME, LOG_PID, LOG_USER);
     setenv("XDG_CACHE_HOME", "/usr/local/packages/" APP_NAME "/localdata", 1);
 

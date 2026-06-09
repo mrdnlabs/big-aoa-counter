@@ -55,6 +55,9 @@ The internal CivetWeb server listens on `127.0.0.1:2001` only; clients should no
 - `AOA field`: choose the count value to display
 - `Poll interval (ms)`: bounded from `250` to `10000`; `1000` means one update per second
 - `Overlay scale (%)`: scales the large ACAP overlay height and text from `50` to `200`; `100` keeps the default size
+- `Overlay width`: choose full, half, or third width for the large ACAP overlay
+- `Overlay placement`: drag the sample overlay in the settings page to save normalized on-stream placement
+- `Show scenario name`: show or hide the selected AOA scenario name in the large ACAP overlay
 
 Common AOA fields:
 
