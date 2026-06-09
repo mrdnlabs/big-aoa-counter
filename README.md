@@ -130,17 +130,6 @@ curl -sS --anyauth -u root:<password> \
 - Packages are unsigned unless the release process is extended with Axis signing.
 - The broad reverse-proxy UI/API route uses admin access because it includes configuration and operational actions.
 
-## Development Notes
-
-Project-specific findings are kept in `C:\_acap\learnings\project-notes\`.
-
-Useful notes:
-
-- `big-aoa-counter-publish-learnings.md`
-- `big-aoa-counter-open-button-and-count-source.md`
-- `aoa-on-camera-auth-findings.md`
-- `p3748-big-aoa-counter-live-notes.md`
-
 ## License
 
 MIT License. See [LICENSE](LICENSE).
