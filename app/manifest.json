@@ -7,7 +7,7 @@
       "vendor": "MRDN Labs",
       "embeddedSdkVersion": "3.0",
       "runMode": "respawn",
-      "version": "0.1.0"
+      "version": "0.1.1"
     },
     "configuration": {
       "settingPage": "index.html",
@@ -47,6 +47,11 @@
         {
           "name": "PollIntervalMs",
           "default": "1000",
+          "type": "string"
+        },
+        {
+          "name": "OverlayScalePercent",
+          "default": "100",
           "type": "string"
         }
       ]

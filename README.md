@@ -48,12 +48,13 @@ The internal CivetWeb server listens on `127.0.0.1:2001` only; clients should no
 ## Configuration
 
 - `Scenario`: select a specific countable AOA scenario, or leave automatic selection enabled
-- `Mode=custom`: show only the ACAP's large overlay
-- `Mode=dynamic`: update only the selected Axis dynamic text slot
-- `Mode=both`: update both display paths
+- `Mode=custom`: show only the ACAP's large overlay drawn by this app
+- `Mode=dynamic`: update only the selected Axis dynamic text slot, for use with an Axis overlay such as `#D12`
+- `Mode=both`: show the large ACAP overlay and update the selected Axis dynamic text slot
 - `Dynamic text slot`: slot `1` to `16`, where slot `12` maps to `#D12`
 - `AOA field`: choose the count value to display
 - `Poll interval (ms)`: bounded from `250` to `10000`; `1000` means one update per second
+- `Overlay scale (%)`: scales the large ACAP overlay height and text from `50` to `200`; `100` keeps the default size
 
 Common AOA fields:
 

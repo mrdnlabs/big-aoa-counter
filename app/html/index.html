@@ -80,6 +80,11 @@
             <input name="PollIntervalMs" type="number" min="250" step="250">
             <span class="hint">1000 means one update per second.</span>
           </label>
+          <label class="field">Overlay scale (%)
+            <span class="tooltip" title="Scales the large ACAP overlay height and text. 100 keeps the default size.">i</span>
+            <input name="OverlayScalePercent" type="number" min="50" max="200" step="10">
+            <span class="hint">50 to 200; 100 keeps the default size.</span>
+          </label>
         </div>
         <div class="form-actions">
           <button type="submit">Save config</button>

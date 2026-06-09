@@ -25,6 +25,9 @@
 #define MAX_BODY_SIZE 16384
 #define MAX_LABEL_LENGTH 64
 #define MAX_SCENARIO_UID_LENGTH 32
+#define DEFAULT_OVERLAY_SCALE_PERCENT 100
+#define MIN_OVERLAY_SCALE_PERCENT 50
+#define MAX_OVERLAY_SCALE_PERCENT 200
 
 typedef struct {
     gchar* label;
@@ -33,6 +36,7 @@ typedef struct {
     gchar* scenario_uid;
     gchar* category;
     gchar* poll_interval_ms;
+    gchar* overlay_scale_percent;
 } AppConfig;
 
 typedef struct {
@@ -43,10 +47,12 @@ typedef struct {
     gchar* scenario_name;
     gchar* scenario_type;
     gchar* category;
+    gchar* mode;
     gchar* timestamp;
     gchar* reset_time;
     gchar* api_version;
     gchar* last_error;
+    gint overlay_scale_percent;
 } AppState;
 
 static volatile sig_atomic_t application_running = 1;
@@ -81,6 +87,7 @@ static void app_config_clear(AppConfig* config) {
     g_free(config->scenario_uid);
     g_free(config->category);
     g_free(config->poll_interval_ms);
+    g_free(config->overlay_scale_percent);
 }
 
 static gboolean read_parameter(const char* name, gchar** value) {
@@ -93,6 +100,14 @@ static gboolean read_parameter(const char* name, gchar** value) {
     return TRUE;
 }
 
+static void read_parameter_or_default(const char* name, const char* default_value, gchar** value) {
+    GError* error = NULL;
+    if (!ax_parameter_get(parameter_handle, name, value, &error)) {
+        g_clear_error(&error);
+        *value = g_strdup(default_value);
+    }
+}
+
 static AppConfig load_config(void) {
     AppConfig config;
     app_config_init(&config);
@@ -103,6 +118,7 @@ static AppConfig load_config(void) {
         !read_parameter("PollIntervalMs", &config.poll_interval_ms)) {
         panic("Failed to load application parameters");
     }
+    read_parameter_or_default("OverlayScalePercent", "100", &config.overlay_scale_percent);
     return config;
 }
 
@@ -120,6 +136,28 @@ static gboolean signal_handler(gpointer loop) {
     application_running = 0;
     g_main_loop_quit((GMainLoop*)loop);
     return G_SOURCE_REMOVE;
+}
+
+static gint parse_overlay_scale_percent(const char* value) {
+    if (value == NULL || *value == '\0') {
+        return DEFAULT_OVERLAY_SCALE_PERCENT;
+    }
+
+    char* end = NULL;
+    gint64 parsed = g_ascii_strtoll(value, &end, 10);
+    if (end == NULL || *end != '\0') {
+        return DEFAULT_OVERLAY_SCALE_PERCENT;
+    }
+    return CLAMP((gint)parsed, MIN_OVERLAY_SCALE_PERCENT, MAX_OVERLAY_SCALE_PERCENT);
+}
+
+static void update_state_from_config(const AppConfig* config) {
+    pthread_mutex_lock(&app_state.mutex);
+    state_replace(&app_state.label, config->label);
+    state_replace(&app_state.category, config->category);
+    state_replace(&app_state.mode, config->mode);
+    app_state.overlay_scale_percent = parse_overlay_scale_percent(config->overlay_scale_percent);
+    pthread_mutex_unlock(&app_state.mutex);
 }
 
 static void setup_overlay_data(struct axoverlay_overlay_data* data) {
@@ -144,8 +182,16 @@ static void adjustment_cb(gint id,
     (void)overlay_x;
     (void)overlay_y;
     (void)user_data;
+    gint scale = DEFAULT_OVERLAY_SCALE_PERCENT;
+    pthread_mutex_lock(&app_state.mutex);
+    if (app_state.overlay_scale_percent > 0) {
+        scale = app_state.overlay_scale_percent;
+    }
+    pthread_mutex_unlock(&app_state.mutex);
+
     *overlay_width = stream->rotation == 90 || stream->rotation == 270 ? stream->height : stream->width;
-    *overlay_height = MAX(140, *overlay_width / 7);
+    gint base_height = MAX(140, *overlay_width / 7);
+    *overlay_height = MAX(80, (base_height * scale) / 100);
 }
 
 static void draw_overlay(gpointer rendering_context,
@@ -165,11 +211,13 @@ static void draw_overlay(gpointer rendering_context,
     (void)user_data;
 
     gchar* label = NULL;
+    gchar* mode = NULL;
     gchar* scenario = NULL;
     gint count = 0;
 
     pthread_mutex_lock(&app_state.mutex);
     label = g_strdup(app_state.label && *app_state.label ? app_state.label : "Object count");
+    mode = g_strdup(app_state.mode && *app_state.mode ? app_state.mode : "both");
     scenario = g_strdup(app_state.scenario_name && *app_state.scenario_name ? app_state.scenario_name
                                                                             : "Awaiting AOA scenario");
     count = app_state.count;
@@ -179,6 +227,13 @@ static void draw_overlay(gpointer rendering_context,
     cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
     cairo_set_source_rgba(cr, 0.0, 0.0, 0.0, 0.0);
     cairo_paint(cr);
+
+    if (g_strcmp0(mode, "dynamic") == 0) {
+        g_free(label);
+        g_free(mode);
+        g_free(scenario);
+        return;
+    }
 
     cairo_set_source_rgba(cr, 0.06, 0.06, 0.06, 0.72);
     cairo_new_path(cr);
@@ -211,6 +266,7 @@ static void draw_overlay(gpointer rendering_context,
 
     g_free(count_text);
     g_free(label);
+    g_free(mode);
     g_free(scenario);
 }
 
@@ -602,10 +658,12 @@ static gboolean update_count_from_aoa(CURL* handle,
     state_replace(&app_state.scenario_name, scenario_name);
     state_replace(&app_state.scenario_type, scenario_type);
     state_replace(&app_state.category, config->category);
+    state_replace(&app_state.mode, config->mode);
     state_replace(&app_state.timestamp, timestamp);
     state_replace(&app_state.reset_time, reset_time);
     state_replace(&app_state.api_version, api_version);
     state_replace(&app_state.last_error, "");
+    app_state.overlay_scale_percent = parse_overlay_scale_percent(config->overlay_scale_percent);
     pthread_mutex_unlock(&app_state.mutex);
 
     redraw_overlay();
@@ -632,6 +690,7 @@ static void* polling_thread(void* user_data) {
     gchar* api_version = NULL;
     while (application_running) {
         AppConfig config = load_config();
+        update_state_from_config(&config);
         if (credentials == NULL) {
             g_free(credentials);
             credentials = build_runtime_credentials(&config);
@@ -670,6 +729,7 @@ static json_t* build_status_json(void) {
                                     config.category,
                                     "PollIntervalMs",
                                     config.poll_interval_ms);
+    json_object_set_new(config_json, "OverlayScalePercent", json_string(config.overlay_scale_percent));
 
     pthread_mutex_lock(&app_state.mutex);
     json_t* state_json = json_pack("{s:i,s:s,s:s,s:s,s:s,s:s,s:s,s:s}",
@@ -864,6 +924,16 @@ static gboolean validate_config_value(const char* key, const char* value, gchar*
         return FALSE;
     }
 
+    if (g_strcmp0(key, "OverlayScalePercent") == 0) {
+        if (parse_integer_range(value, MIN_OVERLAY_SCALE_PERCENT, MAX_OVERLAY_SCALE_PERCENT)) {
+            return TRUE;
+        }
+        *error_message = g_strdup_printf("OverlayScalePercent must be an integer from %d to %d",
+                                         MIN_OVERLAY_SCALE_PERCENT,
+                                         MAX_OVERLAY_SCALE_PERCENT);
+        return FALSE;
+    }
+
     *error_message = g_strdup_printf("Unknown configuration key: %s", key);
     return FALSE;
 }
@@ -904,7 +974,7 @@ static int handle_config(struct mg_connection* conn) {
     }
 
     const char* keys[] = {"Label", "Mode", "DynamicTextSlot", "ScenarioUid", "Category",
-                          "PollIntervalMs"};
+                          "PollIntervalMs", "OverlayScalePercent"};
     const char* payload_key = NULL;
     json_t* payload_value = NULL;
     json_object_foreach(payload, payload_key, payload_value) {
@@ -935,6 +1005,10 @@ static int handle_config(struct mg_connection* conn) {
         }
     }
     json_decref(payload);
+    AppConfig config = load_config();
+    update_state_from_config(&config);
+    redraw_overlay();
+    app_config_clear(&config);
     json_t* response = json_pack("{s:b}", "ok", 1);
     int result = send_json_response(conn, 200, response);
     json_decref(response);
@@ -1044,6 +1118,7 @@ static int request_handler(struct mg_connection* conn, void* cb_data) {
 int main(void) {
     memset(&app_state, 0, sizeof(app_state));
     pthread_mutex_init(&app_state.mutex, NULL);
+    app_state.overlay_scale_percent = DEFAULT_OVERLAY_SCALE_PERCENT;
     openlog(APP_NAME, LOG_PID, LOG_USER);
     setenv("XDG_CACHE_HOME", "/usr/local/packages/" APP_NAME "/localdata", 1);
 
@@ -1052,6 +1127,9 @@ int main(void) {
     if (parameter_handle == NULL) {
         panic("Failed to init axparameter: %s", error->message);
     }
+    AppConfig initial_config = load_config();
+    update_state_from_config(&initial_config);
+    app_config_clear(&initial_config);
 
     if (!axoverlay_is_backend_supported(AXOVERLAY_CAIRO_IMAGE_BACKEND)) {
         panic("AXOVERLAY_CAIRO_IMAGE_BACKEND is not supported");
@@ -1131,6 +1209,7 @@ int main(void) {
     g_free(app_state.scenario_name);
     g_free(app_state.scenario_type);
     g_free(app_state.category);
+    g_free(app_state.mode);
     g_free(app_state.timestamp);
     g_free(app_state.reset_time);
     g_free(app_state.api_version);
