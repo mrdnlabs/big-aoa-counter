@@ -366,7 +366,7 @@ static char* vapix_post(CURL* handle,
         curl_easy_setopt(handle, CURLOPT_WRITEDATA, response);
         if (credentials && *credentials) {
             curl_easy_setopt(handle, CURLOPT_USERPWD, credentials);
-            curl_easy_setopt(handle, CURLOPT_HTTPAUTH, CURLAUTH_BASIC);
+            curl_easy_setopt(handle, CURLOPT_HTTPAUTH, CURLAUTH_ANY);
         }
         CURLcode res = curl_easy_perform(handle);
         long response_code = 0;
@@ -399,7 +399,7 @@ static gboolean vapix_get(CURL* handle,
         curl_easy_setopt(handle, CURLOPT_TIMEOUT, 10L);
         if (credentials && *credentials) {
             curl_easy_setopt(handle, CURLOPT_USERPWD, credentials);
-            curl_easy_setopt(handle, CURLOPT_HTTPAUTH, CURLAUTH_BASIC);
+            curl_easy_setopt(handle, CURLOPT_HTTPAUTH, CURLAUTH_ANY);
         }
         CURLcode res = curl_easy_perform(handle);
         long response_code = 0;
