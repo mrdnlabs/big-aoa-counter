@@ -7,7 +7,7 @@
       "vendor": "MRDN Labs",
       "embeddedSdkVersion": "3.0",
       "runMode": "respawn",
-      "version": "0.1.2"
+      "version": "0.1.3"
     },
     "configuration": {
       "settingPage": "index.html",

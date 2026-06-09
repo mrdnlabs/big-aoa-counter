@@ -24,6 +24,16 @@ function setCategoryDescription(value) {
   document.getElementById('category-description').textContent = description;
 }
 
+function updateDynamicSlotHint(value) {
+  const hint = document.getElementById('dynamic-slot-hint');
+  const slot = Number(value);
+  if (Number.isInteger(slot) && slot >= 1 && slot <= 16) {
+    hint.textContent = `Axis overlay modifier for this slot: #D${slot}.`;
+    return;
+  }
+  hint.textContent = 'Enter a slot from 1 to 16 to see the matching #D modifier.';
+}
+
 function populateCategorySelect(selectedValue) {
   const categorySelect = document.getElementById('category-select');
   categorySelect.innerHTML = '';
@@ -85,6 +95,7 @@ async function loadStatus() {
         form.elements[key].value = value;
       }
     });
+    updateDynamicSlotHint(form.elements.DynamicTextSlot.value);
   }
   return status;
 }
@@ -115,6 +126,11 @@ function scheduleAutoRefresh(intervalMs) {
 document.getElementById('category-select').addEventListener('change', (event) => {
   formDirty = true;
   setCategoryDescription(event.target.value);
+});
+
+document.querySelector('[name="DynamicTextSlot"]').addEventListener('input', (event) => {
+  formDirty = true;
+  updateDynamicSlotHint(event.target.value);
 });
 
 document.getElementById('config-form').addEventListener('input', () => {
