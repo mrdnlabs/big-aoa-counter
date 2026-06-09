@@ -14,8 +14,8 @@
       "reverseProxy": [
         {
           "apiPath": "big-aoa-counter",
-          "target": "http://localhost:2001",
-          "access": "viewer"
+          "target": "http://127.0.0.1:2001",
+          "access": "admin"
         }
       ],
       "paramConfig": [

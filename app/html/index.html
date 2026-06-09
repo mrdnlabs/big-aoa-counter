@@ -5,11 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Big AOA Counter</title>
     <script>
-      if (window.location.port !== '2001') {
-        window.location.replace(`http://${window.location.hostname}:2001/`);
+      const proxyBasePath = '/local/big_aoa_counter/big-aoa-counter/';
+      if (!window.location.pathname.startsWith(proxyBasePath)) {
+        window.location.replace(proxyBasePath);
       }
     </script>
-    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="style.css">
   </head>
 <body>
   <main class="shell">
@@ -97,6 +98,6 @@
       <pre id="status-log"></pre>
     </section>
   </main>
-  <script src="/app.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>

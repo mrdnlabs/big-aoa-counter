@@ -5,11 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Big AOA Counter Widget</title>
     <script>
-      if (window.location.port !== '2001') {
-        window.location.replace(`http://${window.location.hostname}:2001/widget.html`);
+      const proxyWidgetPath = '/local/big_aoa_counter/big-aoa-counter/widget.html';
+      if (window.location.pathname !== proxyWidgetPath) {
+        window.location.replace(proxyWidgetPath);
       }
     </script>
-    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="style.css">
   </head>
 <body class="widget-body">
   <main class="widget-shell">
@@ -20,6 +21,6 @@
       <p class="widget-meta" id="widget-meta">Connecting to live count...</p>
     </section>
   </main>
-  <script src="/widget.js"></script>
+  <script src="widget.js"></script>
 </body>
 </html>

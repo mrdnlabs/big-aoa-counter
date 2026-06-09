@@ -1,4 +1,6 @@
 .env.devices
+.git
+.github
 build/
 dist/
 *.eap

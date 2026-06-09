@@ -19,7 +19,12 @@
 
 #define APP_NAME "big_aoa_counter"
 #define HTTP_PORT "2001"
+#define LISTEN_ADDRESS "127.0.0.1:" HTTP_PORT
+#define PROXY_API_PATH "big-aoa-counter"
+#define PROXY_PREFIX "/local/" APP_NAME "/" PROXY_API_PATH
 #define MAX_BODY_SIZE 16384
+#define MAX_LABEL_LENGTH 64
+#define MAX_SCENARIO_UID_LENGTH 32
 
 typedef struct {
     gchar* label;
@@ -109,14 +114,6 @@ static gboolean persist_config_value(const char* key, const char* value) {
         return FALSE;
     }
     return TRUE;
-}
-
-static void stop_application(int status) {
-    (void)status;
-    application_running = 0;
-    if (main_loop != NULL) {
-        g_main_loop_quit(main_loop);
-    }
 }
 
 static gboolean signal_handler(gpointer loop) {
@@ -246,6 +243,8 @@ static char* parse_credentials(GVariant* result) {
     char* password = NULL;
     g_variant_get(result, "(&s)", &credentials_string);
     if (sscanf(credentials_string, "%m[^:]:%ms", &user, &password) != 2) {
+        free(user);
+        free(password);
         return NULL;
     }
     char* credentials = g_strdup_printf("%s:%s", user, password);
@@ -715,15 +714,38 @@ static json_t* build_status_json(void) {
     return root;
 }
 
+static const char* http_reason_phrase(int status_code) {
+    switch (status_code) {
+        case 200:
+            return "OK";
+        case 400:
+            return "Bad Request";
+        case 404:
+            return "Not Found";
+        case 500:
+            return "Internal Server Error";
+        default:
+            return "OK";
+    }
+}
+
 static int send_json_response(struct mg_connection* conn, int status_code, json_t* payload) {
     char* body = json_dumps(payload, JSON_INDENT(2));
     mg_printf(conn,
-              "HTTP/1.1 %d OK\r\nContent-Type: application/json\r\nContent-Length: %zu\r\nConnection: close\r\n\r\n%s",
+              "HTTP/1.1 %d %s\r\nContent-Type: application/json\r\nContent-Length: %zu\r\nConnection: close\r\n\r\n%s",
               status_code,
+              http_reason_phrase(status_code),
               strlen(body),
               body);
     free(body);
     return 1;
+}
+
+static int send_error_response(struct mg_connection* conn, int status_code, const char* message) {
+    json_t* response = json_pack("{s:s}", "error", message);
+    int result = send_json_response(conn, status_code, response);
+    json_decref(response);
+    return result;
 }
 
 static gchar* read_request_body(struct mg_connection* conn) {
@@ -734,6 +756,116 @@ static gchar* read_request_body(struct mg_connection* conn) {
     }
     buffer[read] = '\0';
     return g_strdup(buffer);
+}
+
+static gboolean string_in_list(const char* value, const char* const* allowed, guint allowed_count) {
+    for (guint i = 0; i < allowed_count; i++) {
+        if (g_strcmp0(value, allowed[i]) == 0) {
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
+static gboolean parse_integer_range(const char* value, gint min_value, gint max_value) {
+    if (value == NULL || *value == '\0') {
+        return FALSE;
+    }
+
+    char* end = NULL;
+    gint64 parsed = g_ascii_strtoll(value, &end, 10);
+    return end != NULL && *end == '\0' && parsed >= min_value && parsed <= max_value;
+}
+
+static gboolean is_digits_or_empty(const char* value) {
+    if (value == NULL) {
+        return FALSE;
+    }
+
+    for (const char* cursor = value; *cursor != '\0'; cursor++) {
+        if (!g_ascii_isdigit(*cursor)) {
+            return FALSE;
+        }
+    }
+    return TRUE;
+}
+
+static gboolean label_is_valid(const char* value) {
+    if (value == NULL || strlen(value) > MAX_LABEL_LENGTH) {
+        return FALSE;
+    }
+
+    for (const char* cursor = value; *cursor != '\0'; cursor++) {
+        if (*cursor == '\r' || *cursor == '\n') {
+            return FALSE;
+        }
+    }
+    return TRUE;
+}
+
+static gboolean validate_config_value(const char* key, const char* value, gchar** error_message) {
+    static const char* const modes[] = {"custom", "dynamic", "both"};
+    static const char* const categories[] = {"total",
+                                             "totalVehicle",
+                                             "totalHuman",
+                                             "totalCar",
+                                             "totalBike",
+                                             "totalBus",
+                                             "totalTruck",
+                                             "totalOtherVehicle"};
+
+    if (g_strcmp0(key, "Label") == 0) {
+        if (label_is_valid(value)) {
+            return TRUE;
+        }
+        *error_message = g_strdup_printf("%s must be at most %d characters without newlines",
+                                         key,
+                                         MAX_LABEL_LENGTH);
+        return FALSE;
+    }
+
+    if (g_strcmp0(key, "Mode") == 0) {
+        if (string_in_list(value, modes, G_N_ELEMENTS(modes))) {
+            return TRUE;
+        }
+        *error_message = g_strdup("Mode must be custom, dynamic, or both");
+        return FALSE;
+    }
+
+    if (g_strcmp0(key, "DynamicTextSlot") == 0) {
+        if (parse_integer_range(value, 1, 16)) {
+            return TRUE;
+        }
+        *error_message = g_strdup("DynamicTextSlot must be an integer from 1 to 16");
+        return FALSE;
+    }
+
+    if (g_strcmp0(key, "ScenarioUid") == 0) {
+        if (strlen(value) <= MAX_SCENARIO_UID_LENGTH && is_digits_or_empty(value)) {
+            return TRUE;
+        }
+        *error_message = g_strdup("ScenarioUid must be empty or a numeric scenario id");
+        return FALSE;
+    }
+
+    if (g_strcmp0(key, "Category") == 0) {
+        if (string_in_list(value, categories, G_N_ELEMENTS(categories))) {
+            return TRUE;
+        }
+        *error_message = g_strdup("Category is not supported");
+        return FALSE;
+    }
+
+    if (g_strcmp0(key, "PollIntervalMs") == 0) {
+        if (parse_integer_range(value, 250, 10000)) {
+            return TRUE;
+        }
+        *error_message = g_strdup("PollIntervalMs must be an integer from 250 to 10000");
+        return FALSE;
+    }
+
+    *error_message = g_strdup_printf("Unknown configuration key: %s", key);
+    return FALSE;
 }
 
 static int serve_static_file(struct mg_connection* conn, const char* path, const char* content_type) {
@@ -764,18 +896,42 @@ static int handle_config(struct mg_connection* conn) {
     json_t* payload = json_loads(body, 0, &error);
     g_free(body);
     if (!payload) {
-        json_t* response = json_pack("{s:s}", "error", error.text);
-        int result = send_json_response(conn, 400, response);
-        json_decref(response);
-        return result;
+        return send_error_response(conn, 400, error.text);
+    }
+    if (!json_is_object(payload)) {
+        json_decref(payload);
+        return send_error_response(conn, 400, "Expected a JSON object");
     }
 
     const char* keys[] = {"Label", "Mode", "DynamicTextSlot", "ScenarioUid", "Category",
                           "PollIntervalMs"};
+    const char* payload_key = NULL;
+    json_t* payload_value = NULL;
+    json_object_foreach(payload, payload_key, payload_value) {
+        if (!json_is_string(payload_value)) {
+            gchar* message = g_strdup_printf("%s must be a string", payload_key);
+            int result = send_error_response(conn, 400, message);
+            g_free(message);
+            json_decref(payload);
+            return result;
+        }
+
+        gchar* validation_error = NULL;
+        if (!validate_config_value(payload_key, json_string_value(payload_value), &validation_error)) {
+            int result = send_error_response(conn, 400, validation_error);
+            g_free(validation_error);
+            json_decref(payload);
+            return result;
+        }
+    }
+
     for (guint i = 0; i < G_N_ELEMENTS(keys); i++) {
         json_t* value = json_object_get(payload, keys[i]);
         if (json_is_string(value)) {
-            persist_config_value(keys[i], json_string_value(value));
+            if (!persist_config_value(keys[i], json_string_value(value))) {
+                json_decref(payload);
+                return send_error_response(conn, 500, "Failed to persist configuration");
+            }
         }
     }
     json_decref(payload);
@@ -788,6 +944,11 @@ static int handle_config(struct mg_connection* conn) {
 static int handle_reset_or_alarm(struct mg_connection* conn, const char* method_name) {
     AppConfig config = load_config();
     CURL* handle = curl_easy_init();
+    if (!handle) {
+        app_config_clear(&config);
+        return send_error_response(conn, 500, "Failed to initialize curl");
+    }
+
     gchar* credentials = build_runtime_credentials(&config);
     gchar* api_version = determine_api_version(handle, &config, credentials);
     gchar* scenario_uid = NULL;
@@ -830,40 +991,49 @@ static int handle_discover(struct mg_connection* conn) {
     return result;
 }
 
+static const char* normalize_request_path(const char* request_uri) {
+    if (g_str_has_prefix(request_uri, PROXY_PREFIX)) {
+        const char* path = request_uri + strlen(PROXY_PREFIX);
+        return *path == '\0' ? "/" : path;
+    }
+    return request_uri;
+}
+
 static int request_handler(struct mg_connection* conn, void* cb_data) {
     (void)cb_data;
     const struct mg_request_info* req = mg_get_request_info(conn);
-    if (strcmp(req->request_uri, "/") == 0) {
+    const char* path = normalize_request_path(req->request_uri);
+    if (strcmp(path, "/") == 0) {
         return serve_static_file(conn, "html/index.html", "text/html; charset=utf-8");
     }
-    if (strcmp(req->request_uri, "/style.css") == 0) {
+    if (strcmp(path, "/style.css") == 0) {
         return serve_static_file(conn, "html/style.css", "text/css; charset=utf-8");
     }
-    if (strcmp(req->request_uri, "/app.js") == 0) {
+    if (strcmp(path, "/app.js") == 0) {
         return serve_static_file(conn, "html/app.js", "application/javascript; charset=utf-8");
     }
-    if (strcmp(req->request_uri, "/widget.html") == 0) {
+    if (strcmp(path, "/widget.html") == 0) {
         return serve_static_file(conn, "html/widget.html", "text/html; charset=utf-8");
     }
-    if (strcmp(req->request_uri, "/widget.js") == 0) {
+    if (strcmp(path, "/widget.js") == 0) {
         return serve_static_file(conn, "html/widget.js", "application/javascript; charset=utf-8");
     }
-    if (strcmp(req->request_uri, "/api/status") == 0) {
+    if (strcmp(path, "/api/status") == 0) {
         json_t* response = build_status_json();
         int result = send_json_response(conn, 200, response);
         json_decref(response);
         return result;
     }
-    if (strcmp(req->request_uri, "/api/config") == 0 && strcmp(req->request_method, "POST") == 0) {
+    if (strcmp(path, "/api/config") == 0 && strcmp(req->request_method, "POST") == 0) {
         return handle_config(conn);
     }
-    if (strcmp(req->request_uri, "/api/discover") == 0 && strcmp(req->request_method, "POST") == 0) {
+    if (strcmp(path, "/api/discover") == 0 && strcmp(req->request_method, "POST") == 0) {
         return handle_discover(conn);
     }
-    if (strcmp(req->request_uri, "/api/reset") == 0 && strcmp(req->request_method, "POST") == 0) {
+    if (strcmp(path, "/api/reset") == 0 && strcmp(req->request_method, "POST") == 0) {
         return handle_reset_or_alarm(conn, "resetAccumulatedCounts");
     }
-    if (strcmp(req->request_uri, "/api/send-alarm") == 0 && strcmp(req->request_method, "POST") == 0) {
+    if (strcmp(path, "/api/send-alarm") == 0 && strcmp(req->request_method, "POST") == 0) {
         return handle_reset_or_alarm(conn, "sendAlarmEvent");
     }
 
@@ -882,9 +1052,6 @@ int main(void) {
     if (parameter_handle == NULL) {
         panic("Failed to init axparameter: %s", error->message);
     }
-
-    signal(SIGTERM, stop_application);
-    signal(SIGINT, stop_application);
 
     if (!axoverlay_is_backend_supported(AXOVERLAY_CAIRO_IMAGE_BACKEND)) {
         panic("AXOVERLAY_CAIRO_IMAGE_BACKEND is not supported");
@@ -911,7 +1078,7 @@ int main(void) {
     }
     redraw_overlay();
 
-    const char* options[] = {"listening_ports", HTTP_PORT, "request_timeout_ms", "10000", 0};
+    const char* options[] = {"listening_ports", LISTEN_ADDRESS, "request_timeout_ms", "10000", 0};
     mg_init_library(0);
     web_context = mg_start(NULL, NULL, options);
     if (!web_context) {
@@ -927,6 +1094,17 @@ int main(void) {
     mg_set_request_handler(web_context, "/api/discover", request_handler, NULL);
     mg_set_request_handler(web_context, "/api/reset", request_handler, NULL);
     mg_set_request_handler(web_context, "/api/send-alarm", request_handler, NULL);
+    mg_set_request_handler(web_context, PROXY_PREFIX, request_handler, NULL);
+    mg_set_request_handler(web_context, PROXY_PREFIX "/", request_handler, NULL);
+    mg_set_request_handler(web_context, PROXY_PREFIX "/style.css", request_handler, NULL);
+    mg_set_request_handler(web_context, PROXY_PREFIX "/app.js", request_handler, NULL);
+    mg_set_request_handler(web_context, PROXY_PREFIX "/widget.html", request_handler, NULL);
+    mg_set_request_handler(web_context, PROXY_PREFIX "/widget.js", request_handler, NULL);
+    mg_set_request_handler(web_context, PROXY_PREFIX "/api/status", request_handler, NULL);
+    mg_set_request_handler(web_context, PROXY_PREFIX "/api/config", request_handler, NULL);
+    mg_set_request_handler(web_context, PROXY_PREFIX "/api/discover", request_handler, NULL);
+    mg_set_request_handler(web_context, PROXY_PREFIX "/api/reset", request_handler, NULL);
+    mg_set_request_handler(web_context, PROXY_PREFIX "/api/send-alarm", request_handler, NULL);
 
     pthread_t thread;
     pthread_create(&thread, NULL, polling_thread, NULL);

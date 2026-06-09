@@ -45,7 +45,7 @@ function formatMeta(state) {
 }
 
 function updateWidgetUrl() {
-  const widgetUrl = `http://${window.location.hostname}:2001/widget.html`;
+  const widgetUrl = new URL('widget.html', window.location.href).href;
   const widgetInput = document.getElementById('widget-url');
   if (widgetInput) {
     widgetInput.value = widgetUrl;
@@ -63,7 +63,7 @@ async function fetchJson(url, options) {
 }
 
 async function loadStatus() {
-  const status = await fetchJson('/api/status');
+  const status = await fetchJson('api/status');
   document.getElementById('label').textContent = status.config.Label;
   document.getElementById('count').textContent = status.state.count;
   document.getElementById('meta').textContent = formatMeta(status.state);
@@ -140,7 +140,7 @@ document.getElementById('copy-widget-url').addEventListener('click', async () =>
 document.getElementById('config-form').addEventListener('submit', async (event) => {
   event.preventDefault();
   const payload = Object.fromEntries(new FormData(event.target).entries());
-  await fetchJson('/api/config', {
+  await fetchJson('api/config', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
@@ -162,7 +162,7 @@ document.querySelectorAll('button[data-action]').forEach((button) => {
     }
 
     if (action === 'discover') {
-      await fetchJson('/api/discover', { method: 'POST' });
+      await fetchJson('api/discover', { method: 'POST' });
       formDirty = false;
       log('Scenario selection reset to automatic');
       const status = await loadStatus();
@@ -171,7 +171,7 @@ document.querySelectorAll('button[data-action]').forEach((button) => {
     }
 
     if (action === 'reset') {
-      await fetchJson('/api/reset', { method: 'POST' });
+      await fetchJson('api/reset', { method: 'POST' });
       formDirty = false;
       log('Accumulated count reset');
       const status = await loadStatus();
@@ -180,7 +180,7 @@ document.querySelectorAll('button[data-action]').forEach((button) => {
     }
 
     if (action === 'alarm') {
-      await fetchJson('/api/send-alarm', { method: 'POST' });
+      await fetchJson('api/send-alarm', { method: 'POST' });
       log('Alarm event sent');
       return;
     }

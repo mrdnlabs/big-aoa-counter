@@ -1,124 +1,98 @@
 # Big AOA Counter
 
-`Big AOA Counter` is an ACAP for Axis cameras that provides a much larger, easier-to-read overlay for AXIS Object Analytics counts than the standard OSD counter.
+Big AOA Counter is an Axis ACAP that displays AXIS Object Analytics counts as a large on-stream overlay and optional Axis dynamic text value.
 
-It supports:
+## Downloads
 
-- a custom on-stream overlay rendered by the ACAP
-- dynamic text slot updates for `#D1` to `#D16`
-- persisted ACAP configuration through app parameters
-- an on-camera web UI for status/config work
-- a standalone widget page for VMS/dashboard embedding
+Download installable `.eap` packages from the [latest GitHub Release](https://github.com/mrdnlabs/big-aoa-counter/releases/latest):
+
+- `Big_AOA_Counter_<version>_aarch64.eap` for current 64-bit Axis devices
+- `Big_AOA_Counter_<version>_armv7hf.eap` for older 32-bit Axis devices
+
+Release assets are built by GitHub Actions from source. The repository does not track generated `.eap` binaries.
+
+## Prerequisites
+
+- Axis camera with ACAP support and AXIS Object Analytics installed
+- AXIS OS 12.x tested; currently verified on AXIS OS 12.1.65 and 12.9.57
+- Device architecture: `aarch64` or `armv7hf`
+- Docker for local builds
+- Unsigned ACAP installation enabled when installing unsigned development packages
+
+## How It Works
+
+The ACAP retrieves local VAPIX service credentials over D-Bus, calls the AOA API on loopback, selects a configured countable scenario, and polls the selected count field. The current count is rendered through `axoverlay`; when enabled, it also updates an Axis dynamic text slot with `dynamicoverlay.cgi`. Configuration is stored in ACAP parameters and managed through the app's authenticated reverse-proxy web UI.
+
+## Web UI
+
+Open the app from the Axis applications page. The manifest declares:
+
+```json
+"settingPage": "index.html"
+```
+
+The setting page redirects to the authenticated reverse-proxy UI:
+
+```text
+https://<camera-ip>/local/big_aoa_counter/big-aoa-counter/
+```
+
+The standalone widget page is available at:
+
+```text
+https://<camera-ip>/local/big_aoa_counter/big-aoa-counter/widget.html
+```
+
+The internal CivetWeb server listens on `127.0.0.1:2001` only; clients should not connect to port `2001` directly.
 
 ## Configuration
 
-The web UI now discovers supported AOA scenarios and shows them in a drop-down.
+- `Scenario`: select a specific countable AOA scenario, or leave automatic selection enabled
+- `Mode=custom`: show only the ACAP's large overlay
+- `Mode=dynamic`: update only the selected Axis dynamic text slot
+- `Mode=both`: update both display paths
+- `Dynamic text slot`: slot `1` to `16`, where slot `12` maps to `#D12`
+- `AOA field`: choose the count value to display
+- `Poll interval (ms)`: bounded from `250` to `10000`; `1000` means one update per second
 
-The app now declares a proper settings page, so Axis should show an `Open` entry/button in the apps view. That entry redirects into the live UI served by the ACAP on port `2001`.
+Common AOA fields:
 
-You can also open the UI directly:
-
-- `http://<camera-ip>:2001/`
-- `http://<camera-ip>:2001/widget.html` for the widget view
-
-The generated Axis settings form is not the main operator UI. The custom UI is where scenario selection is presented as a live drop-down.
-
-- `Scenario`: select a specific countable AOA scenario, or leave it on automatic selection
-- `Mode=custom`: only the ACAP's large overlay is shown
-- `Mode=dynamic`: only the selected dynamic text slot is updated
-- `Mode=both`: both display paths are updated
-- `AOA field`: choose the AOA count field from a drop-down with a short description for each option
-
-The displayed count is intended to mirror the selected AOA scenario value. Legacy manual override/test controls were removed so the UI no longer presents a count that can diverge from AOA.
-
-The web UI auto-refreshes live status but no longer overwrites config fields while you are editing them.
-
-Typical `AOA field` values:
-
-- `total` for the overall count
-- `totalVehicle` for the summed vehicle count across `totalCar`, `totalBike`, `totalBus`, `totalTruck`, and `totalOtherVehicle`
-- `totalHuman` for human counts from class-specific scenarios
-- `totalCar` for vehicle counts from class-specific scenarios
-- `totalBike`, `totalBus`, `totalTruck`, and `totalOtherVehicle` for the other common AOA vehicle classes
-
-`Category=total` in the earlier UI meant exactly this AOA response field. The label is now `AOA field` to make that clearer.
-
-The custom overlay uses the configured `Label`, not the raw AOA field name.
-
-## Current status
-
-- Latest built package: `build/app/Big_AOA_Counter_0_1_0_aarch64.eap`
-- Latest deployed version on tested cameras: `0.1.0`
-- Verified running fully on-camera on:
-  - `AXIS P3748-PLVE` on AXIS OS `12.1.65`
-  - `AXIS Q3538-SLVE` on AXIS OS `12.9.57`
-
-## Important implementation note
-
-This ACAP updates dynamic text slots on-camera using:
-
-- `/axis-cgi/dynamicoverlay.cgi?action=settext&text_index=<n>&text=<value>`
-
-The larger custom overlay path is the primary display path.
-
-For the tested cameras, the count path is now fully on-camera:
-
-- the ACAP retrieves VAPIX runtime credentials over D-Bus
-- the ACAP calls AOA locally over loopback
-- the ACAP writes dynamic text directly on-camera
-- no host-side polling bridge is required
-- the published app does not store external device credentials in ACAP parameters
-
-## Files
-
-- Main ACAP source: [app/big_aoa_counter.c](/mnt/c/big-aoa-counter/app/big_aoa_counter.c)
-- Manifest: [app/manifest.json](/mnt/c/big-aoa-counter/app/manifest.json)
-- Build container: [Dockerfile](/mnt/c/big-aoa-counter/Dockerfile)
-- Build script: [scripts/build.sh](/mnt/c/big-aoa-counter/scripts/build.sh)
-- Deploy script: [scripts/deploy.sh](/mnt/c/big-aoa-counter/scripts/deploy.sh)
-- Main UI: [app/html/index.html](/mnt/c/big-aoa-counter/app/html/index.html)
-- Widget UI: [app/html/widget.html](/mnt/c/big-aoa-counter/app/html/widget.html)
-- Device credentials file: [`.env.devices`](/mnt/c/big-aoa-counter/.env.devices)
+- `total`
+- `totalVehicle`, computed from `totalCar`, `totalBike`, `totalBus`, `totalTruck`, and `totalOtherVehicle`
+- `totalHuman`
+- `totalCar`, `totalBike`, `totalBus`, `totalTruck`, `totalOtherVehicle`
 
 ## Build
 
-```bash
-./scripts/build.sh
-```
-
-Artifacts are copied to:
+Build a single architecture:
 
 ```bash
-build/app/
+bash scripts/build.sh aarch64
+bash scripts/build.sh armv7hf
 ```
 
-## Deploy
+Packages are copied to `dist/`; the full built app tree is copied to `build/app/`.
 
-Update [`.env.devices`](/mnt/c/big-aoa-counter/.env.devices), then:
+GitHub Actions also builds both packages. Manual workflow runs expose them as workflow artifacts, and pushing a tag such as `v0.1.1` creates or updates a GitHub Release with both `.eap` files.
+
+## Install
+
+Install the matching `.eap` file through the Axis device web UI, or use the deployment script with a local `.env.devices` file:
 
 ```bash
-./scripts/deploy.sh
+bash scripts/deploy.sh
 ```
 
-This script:
+`.env.devices` is ignored by git and should contain development device credentials only.
 
-- uploads the `.eap`
-- starts the ACAP
-
-## Enable unsigned apps
-
-If the camera rejects unsigned ACAP uploads, enable them first:
+If the camera rejects unsigned ACAP uploads, enable unsigned apps:
 
 ```bash
 curl -sS --anyauth -u root:<password> -X POST \
   "http://<camera-ip>/axis-cgi/applications/config.cgi?action=set&name=AllowUnsigned&value=true"
 ```
 
-Reference note:
-
-- [enable-unsigned-apps.md](/mnt/c/_acap/enable-unsigned-apps.md)
-
-## Verify deployment
+## Verify
 
 Check installed apps:
 
@@ -127,54 +101,42 @@ curl -sS --anyauth -u root:<password> \
   "http://<camera-ip>/axis-cgi/applications/list.cgi"
 ```
 
-Check app log:
+Check app status through the reverse proxy:
+
+```bash
+curl -sS --anyauth -u root:<password> \
+  "https://<camera-ip>/local/big_aoa_counter/big-aoa-counter/api/status"
+```
+
+Check app logs:
 
 ```bash
 curl -sS --anyauth -u root:<password> \
   "http://<camera-ip>/axis-cgi/admin/systemlog.cgi?appname=big_aoa_counter"
 ```
 
-## Dynamic text slots
+## Tested Devices
 
-Dynamic text indices map like this:
+- AXIS P3748-PLVE on AXIS OS 12.1.65
+- AXIS Q3538-SLVE on AXIS OS 12.9.57
 
-- `text_index=1` maps to `#D1`
-- `text_index=12` maps to `#D12`
+## Known Limitations
 
-Example:
+- The app expects at least one AOA `crosslinecounting` or `occupancyInArea` scenario unless a specific scenario is configured later.
+- Packages are unsigned unless the release process is extended with Axis signing.
+- The broad reverse-proxy UI/API route uses admin access because it includes configuration and operational actions.
 
-```bash
-curl --digest -u root:<password> \
-  "http://<camera-ip>/axis-cgi/dynamicoverlay.cgi?action=settext&text_index=12&text=CountLine%2042"
-```
+## Development Notes
 
-Read back:
+Project-specific findings are kept in `C:\_acap\learnings\project-notes\`.
 
-```bash
-curl --digest -u root:<password> \
-  "http://<camera-ip>/axis-cgi/dynamicoverlay.cgi?action=gettext&text_index=12"
-```
+Useful notes:
 
-## Research notes
+- `big-aoa-counter-publish-learnings.md`
+- `big-aoa-counter-open-button-and-count-source.md`
+- `aoa-on-camera-auth-findings.md`
+- `p3748-big-aoa-counter-live-notes.md`
 
-Project notes were saved here:
+## License
 
-- [axis-acap-12.9-big-aoa-counter-notes.md](/mnt/c/_acap/axis-acap-12.9-big-aoa-counter-notes.md)
-- [p3748-big-aoa-counter-live-notes.md](/mnt/c/_acap/p3748-big-aoa-counter-live-notes.md)
-- [enable-unsigned-apps.md](/mnt/c/_acap/enable-unsigned-apps.md)
-
-## Is further work required?
-
-For the current deployed test state, no required work is blocking:
-
-- the ACAP builds
-- the ACAP deploys
-- the ACAP runs on the camera
-- the large overlay path is implemented
-- the dynamic text update path is implemented
-
-Optional further work:
-
-- reduce startup/log verbosity and tighten runtime logging
-- tune overlay layout, font sizing, and placement per stream/view area
-- add explicit install-time creation of a supported counting scenario instead of relying on post-deploy configuration
+MIT License. See [LICENSE](LICENSE).
