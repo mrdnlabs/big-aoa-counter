@@ -1,0 +1,64 @@
+name: Build ACAP Packages
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch:
+          - aarch64
+          - armv7hf
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Build package
+        run: bash scripts/build.sh "${{ matrix.arch }}"
+        env:
+          IMAGE_TAG: big-aoa-counter:${{ matrix.arch }}
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: big-aoa-counter-${{ matrix.arch }}
+          path: dist/*.eap
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release assets
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download built packages
+        uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create or update release
+        run: |
+          if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" dist/*.eap --repo "${GITHUB_REPOSITORY}" --clobber
+          else
+            gh release create "${GITHUB_REF_NAME}" dist/*.eap \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "Big AOA Counter ${GITHUB_REF_NAME}" \
+              --notes "ACAP packages for aarch64 and armv7hf Axis devices." \
+              --verify-tag
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}

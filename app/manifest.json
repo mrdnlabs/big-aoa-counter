@@ -7,15 +7,15 @@
       "vendor": "MRDN Labs",
       "embeddedSdkVersion": "3.0",
       "runMode": "respawn",
-      "version": "0.1.0"
+      "version": "0.1.4"
     },
     "configuration": {
       "settingPage": "index.html",
       "reverseProxy": [
         {
           "apiPath": "big-aoa-counter",
-          "target": "http://localhost:2001",
-          "access": "viewer"
+          "target": "http://127.0.0.1:2001",
+          "access": "admin"
         }
       ],
       "paramConfig": [
@@ -47,6 +47,31 @@
         {
           "name": "PollIntervalMs",
           "default": "1000",
+          "type": "string"
+        },
+        {
+          "name": "OverlayScalePercent",
+          "default": "100",
+          "type": "string"
+        },
+        {
+          "name": "OverlayWidthPercent",
+          "default": "100",
+          "type": "string"
+        },
+        {
+          "name": "OverlayX",
+          "default": "0",
+          "type": "string"
+        },
+        {
+          "name": "OverlayY",
+          "default": "-0.72",
+          "type": "string"
+        },
+        {
+          "name": "ShowScenarioName",
+          "default": "true",
           "type": "string"
         }
       ]

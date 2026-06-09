@@ -5,11 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Big AOA Counter</title>
     <script>
-      if (window.location.port !== '2001') {
-        window.location.replace(`http://${window.location.hostname}:2001/`);
+      const proxyBasePath = '/local/big_aoa_counter/big-aoa-counter/';
+      if (!window.location.pathname.startsWith(proxyBasePath)) {
+        window.location.replace(proxyBasePath);
       }
     </script>
-    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="style.css">
   </head>
 <body>
   <main class="shell">
@@ -60,7 +61,7 @@
           <label class="field">Dynamic text slot
             <span class="tooltip" title="Axis dynamic text slot number. Slot 12 maps to #D12.">i</span>
             <input name="DynamicTextSlot" type="number" min="1" max="16">
-            <span class="hint">Used when mode is `dynamic` or `both`.</span>
+            <span class="hint" id="dynamic-slot-hint">Axis overlay modifier for this slot: #D12.</span>
           </label>
           <label class="field">Scenario
             <span class="tooltip" title="Pick a specific countable AOA scenario, or leave it on automatic selection.">i</span>
@@ -79,6 +80,42 @@
             <input name="PollIntervalMs" type="number" min="250" step="250">
             <span class="hint">1000 means one update per second.</span>
           </label>
+          <label class="field">Overlay scale (%)
+            <span class="tooltip" title="Scales the large ACAP overlay height and text. 100 keeps the default size.">i</span>
+            <input name="OverlayScalePercent" type="number" min="50" max="200" step="10">
+            <span class="hint">50 to 200; 100 keeps the default size.</span>
+          </label>
+          <label class="field">Overlay width
+            <span class="tooltip" title="Controls the width of the large ACAP overlay.">i</span>
+            <select name="OverlayWidthPercent">
+              <option value="100">Full width</option>
+              <option value="50">Half width</option>
+              <option value="33">Third width</option>
+            </select>
+            <span class="hint">Choose how much of the stream width the overlay uses.</span>
+          </label>
+          <label class="field checkbox-field">Show scenario name
+            <span class="tooltip" title="Shows or hides the selected AOA scenario name in the large overlay.">i</span>
+            <input type="hidden" name="ShowScenarioName" id="show-scenario-name-value" value="true">
+            <input type="checkbox" id="show-scenario-name" checked>
+            <span class="hint">Hide this for a tighter overlay.</span>
+          </label>
+        </div>
+        <div class="overlay-editor">
+          <div class="overlay-editor-top">
+            <h3>Overlay placement</h3>
+            <span class="hint">Drag the sample overlay to place it on the stream.</span>
+          </div>
+          <input type="hidden" name="OverlayX" id="overlay-x" value="0">
+          <input type="hidden" name="OverlayY" id="overlay-y" value="-0.72">
+          <div class="overlay-preview" id="overlay-preview">
+            <div class="overlay-sample" id="overlay-sample" tabindex="0" aria-label="Overlay position preview">
+              <span class="overlay-sample-accent"></span>
+              <strong id="overlay-preview-count">0</strong>
+              <span id="overlay-preview-label">Object count</span>
+              <span id="overlay-preview-scenario">AOA scenario</span>
+            </div>
+          </div>
         </div>
         <div class="form-actions">
           <button type="submit">Save config</button>
@@ -97,6 +134,6 @@
       <pre id="status-log"></pre>
     </section>
   </main>
-  <script src="/app.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>

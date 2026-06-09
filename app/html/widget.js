@@ -1,7 +1,7 @@
 let widgetTimer = null;
 
 async function fetchWidgetStatus() {
-  const response = await fetch('/api/status');
+  const response = await fetch('api/status');
   const text = await response.text();
   const data = text ? JSON.parse(text) : {};
   if (!response.ok) {
